@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <errno.h>
+#include <sys/ioctl.h> // iotctl(), winsize, TIOCGWINSZ
 
 /*** defines ***/
 
@@ -13,22 +14,28 @@
 #define CTRL_KEY(ch) ((ch) & 0x1f)
 
 
-
 /*** data ***/
-// original terminal attributes
-struct termios orig_termios;
+typedef struct {
+    struct termios orig_termios; // original terminal attributes
+} EditorConfig;
+
+
+EditorConfig E;
 
 
 /*** terminal ***/
 
 void die(const char* s) {
+    write(STDOUT_FILENO,"\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3); //   \x1b[1;1H
+    
     perror(s);
     exit(1);
 }
 
 
 void disableRawMode() {
-    int res = tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
+    int res = tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios);
     if (res == -1) {
         die("tcsetattr");
     }
@@ -36,14 +43,14 @@ void disableRawMode() {
 
 void enableRawMode() {
 
-    int resGet = tcgetattr(STDIN_FILENO, &orig_termios);
+    int resGet = tcgetattr(STDIN_FILENO, &E.orig_termios);
     if (resGet == -1)
         die ("tcgetattr");
     
     // call function at exit of the program
     atexit(disableRawMode);
 
-    struct termios raw = orig_termios;
+    struct termios raw = E.orig_termios;
     
     // turn off terminal features by bitwise-AND. Local flags:
     //  ECHO: each key printed to terminal
@@ -86,7 +93,14 @@ char editorReadKey() {
     return c;
 }
 
+int getWindowSize(int* row, int* cols){
 
+    struct winsize;
+
+    //for ()
+
+
+}
 
 /*** input ***/
 
@@ -96,26 +110,40 @@ void editorProcessKeypress(){
     char c = editorReadKey();
     switch(c){
         case CTRL_KEY('q'):
+            write(STDOUT_FILENO,"\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3); //   \x1b[1;1H
+            
             exit(0);
-            break;
-        default:
-            // if is control character (non-printable) ascii 0-31, 127
-            // due to changes bitwise OPOST, we have to add \r to go to the left side of the screen
-            if (iscntrl(c)){
-                printf("%d\r\n", c);
-            }
-            else { // ascii 32-126
-                printf("%d ('%c')\r\n", c, c);
-            }
             break;
     }
 }
 
 /*** output ***/
-void editorRefreshScreen(){
+void editorDrawRows(){
+    for (int y=0; y<24; y++){
+        write(STDOUT_FILENO, "~\r\n", 3);
+    }
+}
 
-    // \x1b : escape(char), 27(int)
+
+void editorRefreshScreen(){
+    
+    // VT100
+
+    // 4 bytes:
+    //
+    // \x1b : ESC(char), 27(int), 
+    // [    : escape sequence always starts with [
+    // J    : Erase In Display
+    // 2    : option after Erase In Display: entire screen
+    // https://vt100.net/docs/vt100-ug/chapter3.html#EDhttps://vt100.net/docs/vt100-ug/chapter3.html#ED
     write(STDOUT_FILENO,"\x1b[2J", 4);
+    
+    //  H   : Cursor Position, move position to row and column parameters(by default are 1;1) 
+    write(STDOUT_FILENO, "\x1b[H", 3); // \x1b[1;1H
+
+    editorDrawRows();
+    write(STDOUT_FILENO, "\x1b[H", 3);// after drawing rows, i want my cursor in position 1;1
 }
 
 /*** init ***/
@@ -123,9 +151,11 @@ int main() {
 
     enableRawMode();
     
-    while (1) {
+    while(1) {
+        editorRefreshScreen();
         editorProcessKeypress();
     }
     
     return 0;
 }
+
