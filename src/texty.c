@@ -16,7 +16,10 @@
 
 /*** data ***/
 typedef struct {
+    int screenRows;
+    int screenCols;
     struct termios orig_termios; // original terminal attributes
+
 } EditorConfig;
 
 
@@ -93,13 +96,35 @@ char editorReadKey() {
     return c;
 }
 
-int getWindowSize(int* row, int* cols){
 
-    struct winsize;
+int getWindowSize(int* rows, int* cols){
 
-    //for ()
+    struct winsize ws;
+   
+    // get windowsize via ioctl (request: TIOCGWINSZ Terminal I/O Control Get WINdow Size) and save it in ws
+    if (1 || ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 ||
+            ws.ws_col == 0){
+        
+        // not in all systems ioctl will work, so here is a fallback method:
+        //  placing cursor at bottom right of the screen and query its position 
 
 
+        //write(STDOUT_FILENO, "\x1b[999;999H", 3); : will not wwork because its not clear if 999;999 will move us off-screen or it will stop
+       
+        // C: CursorForward, move cursor to the right, i use a big value so it will reach the edge 
+        // B: CursorDown, move it down
+        if (write(STDOUT_FILENO, "\x1b[999C\x1b[999B", 12) != 12) return -1;
+            
+        editorReadKey();
+
+        return -1;
+
+
+    }
+
+    *rows = ws.ws_row;
+    *cols = ws.ws_col; 
+    return 0;    
 }
 
 /*** input ***/
@@ -120,7 +145,7 @@ void editorProcessKeypress(){
 
 /*** output ***/
 void editorDrawRows(){
-    for (int y=0; y<24; y++){
+    for (int y = 0; y < E.screenRows; y++){
         write(STDOUT_FILENO, "~\r\n", 3);
     }
 }
@@ -147,10 +172,17 @@ void editorRefreshScreen(){
 }
 
 /*** init ***/
-int main() {
 
+// initialize editorConfig (E) fields
+void initEditor (){
+    if (getWindowSize(&E.screenRows, &E.screenCols) == -1)
+        die ("getWindowSize");
+}
+
+int main() { 
     enableRawMode();
-    
+    initEditor();
+
     while(1) {
         editorRefreshScreen();
         editorProcessKeypress();
